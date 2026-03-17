@@ -18,15 +18,24 @@ typedef enum {
 
 /* ── Per-task file descriptor ────────────────────────────────────────────────
  *
- * Fds 0/1/2 (stdin/stdout/stderr) are virtual — sys_read/write handle them
- * specially.  Fds 3+ map to AliFS files via this table.
+ * Fds 0/1/2 (stdin/stdout/stderr) may be redirected to pipes by the shell.
+ * Fds 3+ are opened by sys_open and map to AliFS files or pipes.
  */
 #define TASK_FD_MAX  8
 
+/* fd type discriminator */
+#define FD_FILE  1   /* backed by an AliFS file  */
+#define FD_PIPE  2   /* backed by a kernel pipe  */
+
 typedef struct {
-    int      used;       /* 1 = open, 0 = closed     */
-    int      alfs_idx;   /* AliFS directory index     */
-    uint32_t offset;     /* current read position (B) */
+    int      used;        /* 1 = open, 0 = closed                           */
+    int      type;        /* FD_FILE or FD_PIPE                             */
+    /* FD_FILE fields */
+    int      alfs_idx;    /* AliFS directory index                          */
+    uint32_t offset;      /* current sequential read position (bytes)       */
+    /* FD_PIPE fields */
+    int      pipe_idx;    /* index into the kernel pipe pool (pipe.c)       */
+    int      pipe_write;  /* 1 = write end, 0 = read end                    */
 } task_fd_t;
 
 /* ── Process Control Block ───────────────────────────────────────────────────
@@ -69,6 +78,8 @@ typedef struct task {
     int32_t       exit_code;            /* exit status, set before TASK_ZOMBIE         */
     uint32_t      pending_sigs;         /* signal bitmask (bit N = signal N pending)   */
     int           waiting;              /* 1 while blocked in sched_wait()             */
+    char          name[16];            /* human-readable name (for ps, debug)         */
+    char          cwd[64];             /* current working directory (absolute path)   */
 } task_t;
 
 /* ── Globals ─────────────────────────────────────────────────────────────── */

@@ -28,6 +28,13 @@ void vga_set_color(unsigned char fg, unsigned char bg);
 void vga_printhex(uint32_t n);
 void vga_printdec(uint32_t n);
 
-/* Cursor column access — used by the shell for line editing. */
-int  vga_get_col(void);          /* return current column (0-79)              */
+/* Cursor / region access — used by the shell. */
+int  vga_get_col(void);
+int  vga_get_row(void);
 void vga_set_col(int c);         /* move hardware cursor to column c, same row */
+
+/* UI primitives — write outside the scroll region without side-effects. */
+void vga_set_scroll_region(int top, int bot);          /* restrict scroll to rows top..bot (inclusive) */
+void vga_put_at(int row, int col, char ch,             /* direct write, no serial mirror, no cursor move */
+                unsigned char attr);
+void vga_set_cursor_at(int row, int col);              /* move HW cursor only, no internal state change  */

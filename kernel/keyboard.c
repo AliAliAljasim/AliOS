@@ -120,8 +120,13 @@ static void kbd_handler(void)
     const char *table = shift ? sc_shifted : sc_unshifted;
     if (sc < sizeof(sc_unshifted)) {
         char c = table[sc];
-        if (c)
-            buf_push(c);
+        if (!c) return;
+        /* Ctrl+letter: return control character (letter & 0x1F) */
+        if (ctrl) {
+            char lc = (c >= 'A' && c <= 'Z') ? (char)(c + 32) : c;
+            if (lc >= 'a' && lc <= 'z') { buf_push(lc & 0x1F); return; }
+        }
+        buf_push(c);
     }
 }
 

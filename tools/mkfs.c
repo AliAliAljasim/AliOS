@@ -1,27 +1,22 @@
 /*
- * mkfs — AliFS image creator
- *
- * Creates a raw AliFS disk image suitable for use as a QEMU virtual disk.
+ * mkfs — AliFS v2 image creator
  *
  * Usage:
- *   mkfs <output.img> [hostpath:fsname ...]
+ *   mkfs <output.img> [entry ...]
+ *
+ * Entry forms:
+ *   hostpath:fspath      — copy host file to fspath in image
+ *   d:fspath             — create a directory entry at fspath
  *
  * Examples:
- *   mkfs build/disk.img                            # empty filesystem
- *   mkfs build/disk.img build/hello.txt:hello.txt  # one file
- *   mkfs build/disk.img prog.bin:prog  data.txt:readme.txt
+ *   mkfs build/disk.img d:/bin d:/home \
+ *        build/echo.elf:/bin/echo build/cat.elf:/bin/cat \
+ *        user/greeting.txt:/home/greeting.txt
  *
- * The colon separates the host path from the in-filesystem name.
- * If no colon is present the basename of the host path is used as the
- * filesystem name.
- *
- * Disk layout produced:
+ * Disk layout:
  *   Sector 0        Superblock
- *   Sectors 1-3     Directory (48 entries × 32 bytes = 1536 bytes)
- *   Sector 4+       File data, contiguous, one extent per file
- *
- * The output image is always DISK_SECTS × 512 bytes (default 128 sectors =
- * 64 KB).  Increase DISK_SECTS if you need to store larger files.
+ *   Sectors 1-6     Directory (48 entries × 64 bytes = 3072 bytes)
+ *   Sector 7+       File data
  */
 
 #include <stdio.h>
@@ -31,14 +26,16 @@
 
 /* ── Must match kernel/alfs.h exactly ───────────────────────────────────── */
 #define ALFS_MAGIC      0x414C4653u
-#define ALFS_VERSION    1u
+#define ALFS_VERSION    2u
 #define ALFS_DIR_START  1u
-#define ALFS_DIR_SECTS  3u
-#define ALFS_DATA_START 4u
-#define ALFS_NAME_MAX   20
-#define ALFS_MAX_FILES  48           /* ALFS_DIR_SECTS * (512 / 32) */
+#define ALFS_DIR_SECTS  6u
+#define ALFS_DATA_START 7u
+#define ALFS_NAME_MAX   52
+#define ALFS_MAX_FILES  48           /* ALFS_DIR_SECTS × (512 / 64) */
+#define ALFS_FLAG_USED  1u
+#define ALFS_FLAG_DIR   2u
 
-#define DISK_SECTS      128          /* 64 KB image */
+#define DISK_SECTS      256          /* 128 KB image — room for dirs + data */
 
 typedef struct {
     uint32_t magic;
@@ -51,44 +48,30 @@ typedef struct {
 } __attribute__((packed)) alfs_super_t;
 
 typedef struct {
-    char     name[ALFS_NAME_MAX];
-    uint32_t start;
-    uint32_t size;
-    uint32_t flags;
+    char     name[ALFS_NAME_MAX];   /* 52 bytes */
+    uint32_t start;                 /*  4 bytes */
+    uint32_t size;                  /*  4 bytes */
+    uint32_t flags;                 /*  4 bytes */
+                                    /* 64 bytes total */
 } __attribute__((packed)) alfs_dirent_t;
-
-/* ── Helpers ─────────────────────────────────────────────────────────────── */
-
-/* Return the last path component (basename) without modifying the original. */
-static const char *basename_of(const char *path)
-{
-    const char *last = path;
-    for (const char *p = path; *p; p++)
-        if (*p == '/')
-            last = p + 1;
-    return last;
-}
-
-/* ── main ────────────────────────────────────────────────────────────────── */
 
 int main(int argc, char *argv[])
 {
     if (argc < 2) {
-        fprintf(stderr, "usage: mkfs <output.img> [hostpath:fsname ...]\n");
+        fprintf(stderr, "usage: mkfs <output.img> [d:path | hostpath:fspath ...]\n");
         return 1;
     }
 
-    int nfiles = argc - 2;
-    if (nfiles > ALFS_MAX_FILES) {
-        fprintf(stderr, "mkfs: too many files (max %d)\n", ALFS_MAX_FILES);
+    int nentries = argc - 2;
+    if (nentries > ALFS_MAX_FILES) {
+        fprintf(stderr, "mkfs: too many entries (max %d)\n", ALFS_MAX_FILES);
         return 1;
     }
 
-    /* ── Allocate and zero the disk image ─────────────────────────────────── */
     uint8_t *disk = calloc(DISK_SECTS, 512);
     if (!disk) { perror("calloc"); return 1; }
 
-    /* ── Write superblock (sector 0) ──────────────────────────────────────── */
+    /* Superblock */
     alfs_super_t *sb = (alfs_super_t *)(disk + 0);
     sb->magic       = ALFS_MAGIC;
     sb->version     = ALFS_VERSION;
@@ -97,105 +80,94 @@ int main(int argc, char *argv[])
     sb->data_start  = ALFS_DATA_START;
     sb->total_sects = DISK_SECTS;
 
-    /* ── Directory pointer (sectors 1-3) ──────────────────────────────────── */
     alfs_dirent_t *dir = (alfs_dirent_t *)(disk + 512 * ALFS_DIR_START);
 
-    /* ── Place each file into the data area ───────────────────────────────── */
     uint32_t next_sect = ALFS_DATA_START;
     int      written   = 0;
 
-    for (int i = 0; i < nfiles; i++) {
-        /* Split "hostpath:fsname" */
+    for (int i = 0; i < nentries; i++) {
         char arg[512];
         strncpy(arg, argv[i + 2], sizeof(arg) - 1);
         arg[sizeof(arg) - 1] = '\0';
 
         char *colon = strchr(arg, ':');
-        const char *hostpath, *fsname;
-        if (colon) {
-            *colon   = '\0';
-            hostpath = arg;
-            fsname   = colon + 1;
-        } else {
-            hostpath = arg;
-            fsname   = basename_of(arg);
+        if (!colon) {
+            fprintf(stderr, "mkfs: missing ':' in '%s'\n", arg);
+            free(disk); return 1;
+        }
+        *colon = '\0';
+        const char *left  = arg;        /* host path, or "d" for directory */
+        const char *fspath = colon + 1; /* filesystem absolute path */
+
+        if (strlen(fspath) >= ALFS_NAME_MAX) {
+            fprintf(stderr, "mkfs: path '%s' too long (max %d)\n",
+                    fspath, ALFS_NAME_MAX - 1);
+            free(disk); return 1;
         }
 
-        /* Validate filesystem name length */
-        if (strlen(fsname) >= ALFS_NAME_MAX) {
-            fprintf(stderr, "mkfs: name '%s' too long (max %d chars)\n",
-                    fsname, ALFS_NAME_MAX - 1);
-            free(disk);
-            return 1;
+        /* Directory entry */
+        if (left[0] == 'd' && left[1] == '\0') {
+            strncpy(dir[written].name, fspath, ALFS_NAME_MAX - 1);
+            dir[written].name[ALFS_NAME_MAX - 1] = '\0';
+            dir[written].start = 0;
+            dir[written].size  = 0;
+            dir[written].flags = ALFS_FLAG_USED | ALFS_FLAG_DIR;
+            printf("mkfs: [%2d] %-30s  <dir>\n", written, fspath);
+            written++;
+            continue;
         }
 
-        /* Open and read the host file */
-        FILE *f = fopen(hostpath, "rb");
+        /* File entry */
+        FILE *f = fopen(left, "rb");
         if (!f) {
-            fprintf(stderr, "mkfs: cannot open '%s': ", hostpath);
-            perror("");
-            free(disk);
-            return 1;
+            fprintf(stderr, "mkfs: cannot open '%s': ", left);
+            perror(""); free(disk); return 1;
         }
-
         fseek(f, 0, SEEK_END);
         long fsize = ftell(f);
         fseek(f, 0, SEEK_SET);
 
         uint32_t sects_needed = (uint32_t)((fsize + 511) / 512);
-
         if (next_sect + sects_needed > DISK_SECTS) {
-            fprintf(stderr, "mkfs: disk full — cannot fit '%s'\n", hostpath);
-            fclose(f);
-            free(disk);
-            return 1;
+            fprintf(stderr, "mkfs: disk full — cannot fit '%s'\n", left);
+            fclose(f); free(disk); return 1;
         }
 
-        /* Copy file data into the image */
         uint8_t *data_ptr = disk + 512 * next_sect;
         size_t   nread    = fread(data_ptr, 1, (size_t)fsize, f);
         fclose(f);
-
         if ((long)nread != fsize) {
-            fprintf(stderr, "mkfs: short read from '%s'\n", hostpath);
-            free(disk);
-            return 1;
+            fprintf(stderr, "mkfs: short read from '%s'\n", left);
+            free(disk); return 1;
         }
 
-        /* Write directory entry */
-        strncpy(dir[written].name, fsname, ALFS_NAME_MAX - 1);
+        strncpy(dir[written].name, fspath, ALFS_NAME_MAX - 1);
         dir[written].name[ALFS_NAME_MAX - 1] = '\0';
         dir[written].start = next_sect;
         dir[written].size  = (uint32_t)fsize;
-        dir[written].flags = 1;   /* used */
+        dir[written].flags = ALFS_FLAG_USED;
 
-        printf("mkfs: [%2d] %-19s  start=%-4u  size=%lu bytes\n",
-               written, fsname, next_sect, (unsigned long)fsize);
+        printf("mkfs: [%2d] %-30s  start=%-4u  size=%lu bytes\n",
+               written, fspath, next_sect, (unsigned long)fsize);
 
         next_sect += sects_needed;
         written++;
     }
 
-    /* ── Write output image ───────────────────────────────────────────────── */
     FILE *out = fopen(argv[1], "wb");
     if (!out) {
         fprintf(stderr, "mkfs: cannot create '%s': ", argv[1]);
-        perror("");
-        free(disk);
-        return 1;
+        perror(""); free(disk); return 1;
     }
-
     if (fwrite(disk, 512, DISK_SECTS, out) != DISK_SECTS) {
         fprintf(stderr, "mkfs: write error\n");
-        fclose(out);
-        free(disk);
-        return 1;
+        fclose(out); free(disk); return 1;
     }
-
     fclose(out);
     free(disk);
 
-    printf("mkfs: wrote %d file(s) → %s  (%d sectors, %d KB)\n",
-           written, argv[1], DISK_SECTS, DISK_SECTS / 2);
+    printf("mkfs: wrote %d entr%s → %s  (%d sectors, %d KB)\n",
+           written, written == 1 ? "y" : "ies",
+           argv[1], DISK_SECTS, DISK_SECTS / 2);
     return 0;
 }

@@ -42,7 +42,9 @@ void serial_init(void)
 
 static void wait_tx_ready(void)
 {
-    while (!(inb(COM1 + UART_LSR) & LSR_THRE))
+    /* Timeout prevents infinite spin if UART isn't responding. */
+    uint32_t timeout = 100000;
+    while (!(inb(COM1 + UART_LSR) & LSR_THRE) && --timeout)
         ;
 }
 

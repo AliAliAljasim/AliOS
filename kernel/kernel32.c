@@ -23,19 +23,30 @@
 void kmain(void)
 {
     serial_init();
+    serial_puts("serial: ok\n");
     vga_init();
+    serial_puts("vga: ok\n");
     gdt_init();
+    serial_puts("gdt: ok\n");
     idt_init();
+    serial_puts("idt: ok\n");
     fault_init();
     syscall_init();
     irq_init();
+    serial_puts("irq: ok\n");
     timer_init(100);
+    serial_puts("timer: ok\n");
     keyboard_init();
     pmm_init();
+    serial_puts("pmm: ok\n");
     paging_init();
+    serial_puts("paging: ok\n");
     heap_init();
+    serial_puts("heap: ok\n");
     ata_init();
+    serial_puts("ata: ok\n");
     int fs_ok = (alfs_init() == 0);
+    serial_puts(fs_ok ? "fs: ok\n" : "fs: no disk\n");
     task_init();
 
     __asm__ volatile ("sti");

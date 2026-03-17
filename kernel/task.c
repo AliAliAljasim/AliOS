@@ -53,6 +53,9 @@ void task_init(void)
     boot_task.stack    = NULL;   /* boot stack lives in BSS, not heap-allocated */
     boot_task.page_dir = paging_physdir();
     boot_task.next     = NULL;
+    boot_task.name[0]  = 's'; boot_task.name[1] = 'h'; boot_task.name[2] = 'e';
+    boot_task.name[3]  = 'l'; boot_task.name[4] = 'l'; boot_task.name[5] = '\0';
+    boot_task.cwd[0]   = '/'; boot_task.cwd[1] = '\0';
 
     current_task = &boot_task;
 }
@@ -102,7 +105,12 @@ task_t *task_create(void (*entry)(void), uint32_t page_dir)
     t->kstack_top = 0;    /* kernel task — no TSS update needed */
     t->user_eip   = 0;
     t->user_esp   = 0;
-    for (int i = 0; i < TASK_FD_MAX; i++) t->fd_table[i].used = 0;
+    for (int i = 0; i < TASK_FD_MAX; i++) {
+        t->fd_table[i].used       = 0;
+        t->fd_table[i].type       = 0;
+        t->fd_table[i].pipe_idx   = -1;
+        t->fd_table[i].pipe_write = 0;
+    }
     t->wakeup_tick  = 0;
     t->user_brk     = 0;
     t->user_eax     = 0;
@@ -110,6 +118,8 @@ task_t *task_create(void (*entry)(void), uint32_t page_dir)
     t->exit_code    = 0;
     t->pending_sigs = 0;
     t->waiting      = 0;
+    t->name[0]      = '\0';
+    t->cwd[0]       = '/'; t->cwd[1] = '\0';
 
     return t;
 }
@@ -158,7 +168,12 @@ task_t *task_create_user(uint32_t eip, uint32_t user_esp, uint32_t *pd)
     t->kstack_top = (uint32_t)(kstack + KSTACK_SIZE);
     t->user_eip   = eip;
     t->user_esp   = user_esp;
-    for (int i = 0; i < TASK_FD_MAX; i++) t->fd_table[i].used = 0;
+    for (int i = 0; i < TASK_FD_MAX; i++) {
+        t->fd_table[i].used       = 0;
+        t->fd_table[i].type       = 0;
+        t->fd_table[i].pipe_idx   = -1;
+        t->fd_table[i].pipe_write = 0;
+    }
     t->wakeup_tick  = 0;
     t->user_brk     = 0x10000000u;
     t->user_eax     = 0;
@@ -166,6 +181,8 @@ task_t *task_create_user(uint32_t eip, uint32_t user_esp, uint32_t *pd)
     t->exit_code    = 0;
     t->pending_sigs = 0;
     t->waiting      = 0;
+    t->name[0]      = '\0';
+    t->cwd[0]       = '/'; t->cwd[1] = '\0';
 
     return t;
 }

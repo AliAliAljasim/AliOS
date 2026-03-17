@@ -1,0 +1,77 @@
+Shell built-ins
+
+Command	Usage
+help	                ||  show command list
+clear	                ||  clear the output area
+ls [path]	            ||  list directory contents
+cd <path>	            ||  change directory (.. works)
+pwd	                    ||  print current directory
+mkdir <name>	        ||  create a directory
+rmdir <name>	        ||  remove an empty directory
+touch <name>	        ||  create an empty file
+rm <name>	            ||  delete a file
+cp <src> <dst>	        ||  copy a file
+mv <src> <dst>	        ||  move / rename a file
+stat <file>	            ||  show file size, type, full path
+history	                ||  print command history
+date	                ||  show current date/time from RTC
+sleep <secs>	        ||  pause shell for N seconds
+run <name> [args]	    ||  load and run an ELF from disk
+ps	                    ||  list all tasks (pid, state, name)
+top	                    ||  real-time process viewer (q to quit)
+htop	                ||  enhanced process viewer (q to quit)
+kill <pid>	            ||  send SIGKILL to a process
+killall <name>	        ||  kill all processes by name
+mem	                    ||  show free physical memory (pages + KB)
+df	                    ||  show disk file count and used KB
+uname	                ||  print AliOS i386
+uptime	                ||  seconds since boot
+find [path] [-name pat]	||  search for files (glob: * and ? supported)
+which <cmd>	            ||  show full path or 'shell built-in'
+nano [file]	            ||  full-screen text editor (^X exit, ^S save, ^K cut, ^U paste)
+shutdown	            ||  ACPI power-off
+reboot	                ||  reboot via keyboard controller
+
+User                    ||  programs in /bin/
+
+Program	Usage
+echo [args...]	        ||  print arguments to stdout
+cat [file]	            ||  print file, or read from stdin
+grep <pattern> [file]	||  print lines matching pattern
+head [-n N] [file]	    ||  print first N lines (default 10)
+tail [-n N] [file]	    ||  print last N lines (default 10)
+wc [file]	            ||  count lines, words, chars
+tee [-a] [file]	        ||  copy stdin to stdout and to file (-a = append)
+sort [file]	            ||  sort lines alphabetically
+uniq [file]	            ||  filter duplicate adjacent lines
+tr [-d] <set1> [set2]	||  translate or delete characters
+cut -f N [-d delim]	    ||  extract field N from each line (default delim: tab)
+seq <n>	                ||  print 1..n; seq <start> <end> for a range
+hexdump [file]	        ||  hex + ASCII dump, 16 bytes per row
+hello	                ||  hello world demo
+
+Shell                   ||  operators
+
+Syntax	Effect
+prog1 | prog2	        ||  pipe stdout of prog1 into stdin of prog2
+prog > file	            ||  redirect stdout to file (overwrite)
+prog >> file	        ||  redirect stdout to file (append)
+prog < file	            ||  redirect stdin from file
+prog | tee file	        ||  write to stdout and file simultaneously
+
+
+=======================================
+TODO
+=======================================
+
+--- User programs (/bin/) ---
+[x] sort                sort lines alphabetically
+[x] uniq                filter duplicate adjacent lines (pairs with sort)
+[x] tr <from> <to>      translate or delete characters
+[x] cut -f N [-d delim] extract fields from delimited lines
+[x] seq <n>             generate a sequence of numbers (1..n)
+[x] hexdump <file>      hex + ASCII dump of a file
+
+--- Shell scripting ---
+[ ] script execution    run a text file as a series of shell commands
+[ ] # comments          ignore lines starting with #

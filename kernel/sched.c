@@ -4,7 +4,22 @@
 #include "gdt.h"
 #include "uvm.h"
 #include "heap.h"
+#include "pipe.h"
 #include <stdint.h>
+
+/* ── Helper: release pipe fds held by task t (must be called with IF=0) ───── */
+static void release_pipe_fds(task_t *t)
+{
+    for (int i = 0; i < TASK_FD_MAX; i++) {
+        if (t->fd_table[i].used && t->fd_table[i].type == FD_PIPE) {
+            t->fd_table[i].used = 0;   /* mark closed first — prevents double-release */
+            if (t->fd_table[i].pipe_write)
+                pipe_close_write(t->fd_table[i].pipe_idx);
+            else
+                pipe_close_read(t->fd_table[i].pipe_idx);
+        }
+    }
+}
 
 /* ── Run queue ───────────────────────────────────────────────────────────────
  *
@@ -92,6 +107,7 @@ static void sched_tick(void)
         /* 2. SIGKILL delivery. */
         if ((t->pending_sigs & (1u << 9)) && t->state != TASK_ZOMBIE) {
             t->pending_sigs &= ~(1u << 9);
+            release_pipe_fds(t);   /* unblock any pipe readers/writers */
             t->exit_code = -9;
             t->state     = TASK_ZOMBIE;
             /* Fall through: the waiting-parent check below will wake the parent. */
@@ -201,6 +217,10 @@ void sched_wake(task_t *t)
 void sched_exit(void)
 {
     __asm__ volatile ("cli");
+
+    /* Release any pipe file descriptors before going zombie, so that waiting
+       readers see EOF and waiting writers see a broken-pipe signal. */
+    release_pipe_fds(current_task);
 
     current_task->state = TASK_ZOMBIE;
 

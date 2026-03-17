@@ -137,3 +137,47 @@ int elf_load(uint32_t *pd, const char *filename, uint32_t *entry_out)
     *entry_out = entry;
     return 0;
 }
+
+/* ── elf_push_args ───────────────────────────────────────────────────────── */
+
+#define USER_STACK_VBASE  0xBFFFF000u
+
+uint32_t elf_push_args(uint8_t *stack_page, int argc, const char **argv)
+{
+    if (argc > 15) argc = 15;   /* hard cap */
+
+    uint32_t str_vaddrs[15];
+    int top = 4095;             /* index of last byte in the 4 KB page */
+
+    /* 1. Copy strings from the top of the page downward. */
+    for (int i = argc - 1; i >= 0; i--) {
+        const char *s = argv[i];
+        int len = 0;
+        while (s[len]) len++;
+        len++;                  /* include null terminator */
+        top -= len;
+        if (top < 64) { top += len; argc = i; break; }   /* out of space */
+        for (int j = 0; j < len; j++)
+            stack_page[top + j] = (uint8_t)s[j];
+        str_vaddrs[i] = USER_STACK_VBASE + (uint32_t)top;
+    }
+
+    /* 2. Align down to 4 bytes. */
+    top &= ~3;
+
+    /* 3. Write NULL-terminated argv[] pointer array. */
+    top -= 4;
+    *(uint32_t *)(stack_page + top) = 0;              /* NULL terminator */
+    for (int i = argc - 1; i >= 0; i--) {
+        top -= 4;
+        *(uint32_t *)(stack_page + top) = str_vaddrs[i];
+    }
+    uint32_t argv_vaddr = USER_STACK_VBASE + (uint32_t)top;
+
+    /* 4. Push argv pointer, argc, and fake return address. */
+    top -= 4; *(uint32_t *)(stack_page + top) = argv_vaddr;
+    top -= 4; *(uint32_t *)(stack_page + top) = (uint32_t)argc;
+    top -= 4; *(uint32_t *)(stack_page + top) = 0;     /* fake retaddr */
+
+    return USER_STACK_VBASE + (uint32_t)top;           /* initial user ESP */
+}

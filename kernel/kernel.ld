@@ -5,8 +5,8 @@ ENTRY(_start)
  *   virtual address  = physical address + KERNEL_OFFSET
  *   physical address = virtual address  - KERNEL_OFFSET
  *
- * The kernel is loaded by the bootloader at physical 0x1000.
- * It is linked to run at virtual 0xC0001000 (3 GB + 4 KB).
+ * The kernel is loaded by the bootloader at physical 0x8000.
+ * It is linked to run at virtual 0xC0008000 (3 GB + 32 KB).
  */
 KERNEL_OFFSET = 0xC0000000;
 
@@ -19,7 +19,7 @@ SECTIONS {
      * section's bytes in the flat binary. The VMA (used for all symbol
      * addresses) is controlled by the . counter.
      */
-    . = 0xC0001000;
+    . = 0xC0008000;
 
     .text   : AT(ADDR(.text)   - KERNEL_OFFSET) { *(.text)    }
     .rodata : AT(ADDR(.rodata) - KERNEL_OFFSET) { *(.rodata*) }

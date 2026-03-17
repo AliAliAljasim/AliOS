@@ -1,0 +1,48 @@
+serial: ok
+vga: ok
+gdt: ok
+idt: ok
+irq: ok
+timer: ok
+pmm: ok
+paging: ok
+heap: ok
+ata: ok
+fs: ok
+AliOS
+
+PMM: 32415 free pages (126 MB)
+GDT:     OK
+Syscall: OK
+Paging:  OK
+Heap:    OK
+ATA:     OK
+FS:      OK
+Tasks:   OK
+
+ELF:     (load failed)
+
+
+help  hello  head  
+> help
+Commands:
+  help               show this message
+  clear              clear screen
+  ls [path]          list directory contents
+  cd <path>          change directory
+  pwd                print working directory
+  mkdir <name>       create a directory
+  rmdir <name>       remove an empty directory
+  touch <name>       create an empty file
+  rm <name>          delete a file
+  cp <src> <dst>     copy a file
+  run <name> [args]  run an ELF program
+  ps                 list all tasks
+  kill <pid>         send SIGKILL to a process
+  mem                show free physical memory
+  df                 show disk usage
+  uname              print system information
+  uptime             show seconds since boot
+  nano [file]        open text editor
+  shutdown           power off
+  reboot             reboot

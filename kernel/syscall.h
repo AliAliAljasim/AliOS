@@ -21,7 +21,12 @@
 #define SYS_EXEC    7   /* exec(name)                → replaces image; no return */
 #define SYS_FORK    8   /* fork()                    → child pid / 0 in child    */
 #define SYS_WAIT    9   /* wait(exit_code_ptr)       → child pid or -1           */
-#define SYS_KILL   10   /* kill(pid, sig)            → 0 or -1                   */
+#define SYS_KILL      10  /* kill(pid, sig)            → 0 or -1                   */
+#define SYS_GETPID    11  /* getpid()                  → current PID               */
+#define SYS_GETPPID   12  /* getppid()                 → parent PID                */
+#define SYS_SETCOLOR  13  /* setcolor(fg, bg)          → 0                         */
+#define SYS_PIPE      14  /* pipe(fds[2])              → 0 or -1                   */
+#define SYS_OPEN_W    15  /* open_w(name, append)      → fd (≥3) or -1; creates file */
 
 /* Install the int 0x80 handler and register vector 128 in the IDT.
    Call after idt_init(). */

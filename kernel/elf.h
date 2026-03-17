@@ -74,3 +74,16 @@ typedef struct {
  * and calls sched_add().  On failure the caller should free pd with uvm_free().
  */
 int elf_load(uint32_t *pd, const char *filename, uint32_t *entry_out);
+
+/*
+ * elf_push_args — write argc/argv into a user stack page; return new ESP.
+ *
+ *   stack_page  — physical (== virtual via identity map) address of the 4 KB page.
+ *   argc        — number of argument strings (argv[0] = program name).
+ *   argv        — kernel-space string pointers; the strings are copied onto the page.
+ *
+ * The page must already be zeroed.  Returns the virtual ESP the task should start at.
+ * Stack layout seen by  void _start(int argc, char **argv):
+ *   [esp+0] fake return address (0)   [esp+4] argc   [esp+8] argv pointer
+ */
+uint32_t elf_push_args(uint8_t *stack_page, int argc, const char **argv);

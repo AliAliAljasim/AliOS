@@ -1,4 +1,5 @@
 #include "vga.h"
+#include "serial.h"
 #include "io.h"
 #include <stdint.h>
 
@@ -8,7 +9,9 @@
 
 static int row;
 static int col;
-static unsigned char attr;  /* high nibble = bg, low nibble = fg */
+static unsigned char attr;    /* high nibble = bg, low nibble = fg */
+static int scroll_top = 0;    /* first row that scrolls            */
+static int scroll_bot = VGA_HEIGHT - 1; /* last  row that scrolls   */
 
 
 static void write_cell(int r, int c, char ch)
@@ -18,19 +21,26 @@ static void write_cell(int r, int c, char ch)
 
 static void scroll(void)
 {
-    for (int r = 0; r < VGA_HEIGHT - 1; r++)
+    for (int r = scroll_top; r < scroll_bot; r++)
         for (int c = 0; c < VGA_WIDTH; c++)
             VGA_BASE[r * VGA_WIDTH + c] = VGA_BASE[(r + 1) * VGA_WIDTH + c];
 
     for (int c = 0; c < VGA_WIDTH; c++)
-        write_cell(VGA_HEIGHT - 1, c, ' ');
+        write_cell(scroll_bot, c, ' ');
 
-    row = VGA_HEIGHT - 1;
+    row = scroll_bot;
 }
 
 void vga_set_color(unsigned char fg, unsigned char bg)
 {
     attr = (bg << 4) | (fg & 0x0F);
+}
+
+static void update_cursor(void)
+{
+    uint16_t pos = (uint16_t)(row * VGA_WIDTH + col);
+    outb(0x3D4, 0x0F); outb(0x3D5, (uint8_t)(pos & 0xFF));
+    outb(0x3D4, 0x0E); outb(0x3D5, (uint8_t)(pos >> 8));
 }
 
 void vga_clear(void)
@@ -40,10 +50,13 @@ void vga_clear(void)
             write_cell(r, c, ' ');
     row = 0;
     col = 0;
+    update_cursor();
 }
 
 void vga_putchar(char ch)
 {
+    serial_putchar(ch);   /* mirror every character to COM1 */
+
     if (ch == '\n') {
         col = 0;
         row++;
@@ -62,13 +75,10 @@ void vga_putchar(char ch)
         }
     }
 
-    if (row >= VGA_HEIGHT)
+    if (row > scroll_bot)
         scroll();
 
-    /* Move the hardware cursor to match our software position */
-    uint16_t pos = (uint16_t)(row * VGA_WIDTH + col);
-    outb(0x3D4, 0x0F); outb(0x3D5, (uint8_t)(pos & 0xFF));
-    outb(0x3D4, 0x0E); outb(0x3D5, (uint8_t)(pos >> 8));
+    update_cursor();
 }
 
 void vga_puts(const char *s)
@@ -105,12 +115,42 @@ int vga_get_col(void)
     return col;
 }
 
+int vga_get_row(void)
+{
+    return row;
+}
+
 void vga_set_col(int c)
 {
     if (c < 0)          c = 0;
     if (c >= VGA_WIDTH) c = VGA_WIDTH - 1;
     col = c;
-    uint16_t pos = (uint16_t)(row * VGA_WIDTH + col);
+    update_cursor();
+}
+
+/* Restrict the scrollable region to rows top..bot (inclusive).
+ * Resets the output cursor to (top, 0). */
+void vga_set_scroll_region(int top, int bot)
+{
+    scroll_top = top;
+    scroll_bot = bot;
+    row = top;
+    col = 0;
+    update_cursor();
+}
+
+/* Write one character directly to (row, col) with the given attribute byte.
+ * Does NOT advance the cursor, does NOT mirror to serial, does NOT scroll. */
+void vga_put_at(int r, int c, char ch, unsigned char a)
+{
+    if (r < 0 || r >= VGA_HEIGHT || c < 0 || c >= VGA_WIDTH) return;
+    VGA_BASE[r * VGA_WIDTH + c] = ((uint16_t)a << 8) | (uint8_t)ch;
+}
+
+/* Move only the VGA hardware cursor — does NOT change internal row/col. */
+void vga_set_cursor_at(int r, int c)
+{
+    uint16_t pos = (uint16_t)(r * VGA_WIDTH + c);
     outb(0x3D4, 0x0F); outb(0x3D5, (uint8_t)(pos & 0xFF));
     outb(0x3D4, 0x0E); outb(0x3D5, (uint8_t)(pos >> 8));
 }

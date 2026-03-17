@@ -1,10 +1,18 @@
 org 0x7C00
 bits 16
 
-KERNEL_LOAD_ADDR equ 0x1000
-KERNEL_SECTORS   equ 32
+KERNEL_LOAD_ADDR equ 0x8000
+KERNEL_SECTORS   equ 120         ; 120 × 512 = 61440 bytes; LBA read avoids track limits
 
 start:
+    ; Normalize segments — BIOS may start us at 07C0:0000 or 0000:7C00.
+    ; Set DS=ES=SS=0 so all data/segment references work correctly.
+    xor ax, ax
+    mov ds, ax
+    mov es, ax
+    mov ss, ax
+    mov sp, 0x7C00      ; stack grows down from boot sector
+
     mov [BOOT_DRIVE], dl
 
     mov si, bootmsg
@@ -40,22 +48,27 @@ print_string:
     ret
 
 ; --------------------------
-; BIOS read sectors into 0000:KERNEL_LOAD_ADDR
+; BIOS read sectors into 0000:KERNEL_LOAD_ADDR using INT 0x13 Extended Read
+; (AH=42h, LBA mode). Avoids CHS track boundaries; QEMU SeaBIOS supports this
+; for hard-disk boot drives (DL=0x80).
 ; --------------------------
 load_kernel:
-    xor ax, ax
-    mov es, ax
-    mov bx, KERNEL_LOAD_ADDR
-
-    mov ah, 0x02
-    mov al, KERNEL_SECTORS
-    mov ch, 0x00
-    mov dh, 0x00
-    mov cl, 0x02
+    mov ah, 0x42
     mov dl, [BOOT_DRIVE]
+    mov si, dap
     int 0x13
     jc disk_error
     ret
+
+; Disk Address Packet (DAP) — 16 bytes
+dap:
+    db 0x10              ; DAP size = 16 bytes
+    db 0x00              ; reserved
+    dw KERNEL_SECTORS    ; number of sectors to transfer
+    dw KERNEL_LOAD_ADDR  ; destination offset (segment 0)
+    dw 0x0000            ; destination segment
+    dd 1                 ; LBA low dword  — skip sector 0 (boot sector)
+    dd 0                 ; LBA high dword
 
 disk_error:
     mov si, errmsg
