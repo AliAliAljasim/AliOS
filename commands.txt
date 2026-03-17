@@ -29,6 +29,7 @@ uptime	                ||  seconds since boot
 find [path] [-name pat]	||  search for files (glob: * and ? supported)
 which <cmd>	            ||  show full path or 'shell built-in'
 nano [file]	            ||  full-screen text editor (^X exit, ^S save, ^K cut, ^U paste)
+sh <file>	            ||  run a shell script (# comments supported)
 shutdown	            ||  ACPI power-off
 reboot	                ||  reboot via keyboard controller
 
@@ -73,5 +74,5 @@ TODO
 [x] hexdump <file>      hex + ASCII dump of a file
 
 --- Shell scripting ---
-[ ] script execution    run a text file as a series of shell commands
-[ ] # comments          ignore lines starting with #
+[x] script execution    run a text file as a series of shell commands
+[x] # comments          ignore lines starting with #

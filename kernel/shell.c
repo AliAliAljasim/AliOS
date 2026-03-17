@@ -362,7 +362,7 @@ static void tab_complete(void)
     if (is_cmd) {
         static const char *builtins[] = {
             "help","clear","ls","cd","pwd","mkdir","rmdir","touch","rm","cp",
-            "run","ps","kill","mem","df","uname","uptime","nano","shutdown","reboot",NULL
+            "run","ps","kill","mem","df","uname","uptime","nano","sh","shutdown","reboot",NULL
         };
         for (int i = 0; builtins[i] && tab_count < TAB_MAX; i++)
             if (sh_hasprefix(builtins[i], leaf_prefix))
@@ -494,6 +494,7 @@ static void cmd_help(void)
     vga_puts("  find [path] [-name pat]  search for files\n");
     vga_puts("  which <cmd>        show path or 'built-in'\n");
     vga_puts("  nano [file]        open text editor\n");
+    vga_puts("  sh <file>          run a shell script\n");
     vga_puts("  shutdown           power off\n");
     vga_puts("  reboot             reboot\n");
 }
@@ -1120,7 +1121,7 @@ static void cmd_which(const char *name)
     static const char *builtins[] = {
         "help","clear","ls","cd","pwd","mkdir","rmdir","touch","rm","cp",
         "run","ps","top","htop","kill","killall","mem","df","uname","uptime",
-        "nano","find","which","shutdown","reboot", NULL
+        "nano","sh","find","which","shutdown","reboot", NULL
     };
     for (int i = 0; builtins[i]; i++) {
         if (sh_streq(builtins[i], name)) {
@@ -1258,24 +1259,84 @@ static void cmd_reboot(void)
     __asm__ volatile ("lidt %0; int $0" : : "m"(null_idt));
 }
 
+/* ── Script execution ────────────────────────────────────────────────────── */
+
+static void dispatch(char *p);   /* forward decl */
+
+static void cmd_script(const char *arg)
+{
+    if (!arg || !*arg) { vga_puts("usage: sh <file>\n"); return; }
+
+    char resolved[64];
+    path_resolve(cwd, arg, resolved);
+    int idx = alfs_find(resolved);
+    if (idx < 0) { vga_puts("sh: not found: "); vga_puts(arg); vga_puts("\n"); return; }
+
+    uint32_t size = alfs_size(idx);
+    if (!size) return;
+
+    /* Read file in 128-byte chunks, process line-by-line. */
+    char lbuf[LINE_MAX + 2];   /* one script line */
+    int  li = 0;
+    uint32_t off = 0;
+    char rbuf[128];
+
+    while (off < size) {
+        uint32_t chunk = size - off;
+        if (chunk > sizeof(rbuf)) chunk = sizeof(rbuf);
+        int got = alfs_pread(idx, rbuf, chunk, off);
+        if (got <= 0) break;
+        off += (uint32_t)got;
+
+        for (int i = 0; i < got; i++) {
+            char c = rbuf[i];
+            if (c == '\r') continue;
+            if (c == '\n' || li >= LINE_MAX) {
+                lbuf[li] = '\0';
+                li = 0;
+                /* Skip blank lines and comments. */
+                char *s = lbuf;
+                while (*s == ' ' || *s == '\t') s++;
+                if (!*s || *s == '#') continue;
+                /* Execute. */
+                char tmp[LINE_MAX + 2];
+                int j = 0;
+                while (s[j] && j <= LINE_MAX) { tmp[j] = s[j]; j++; }
+                tmp[j] = '\0';
+                dispatch(tmp);
+            } else {
+                lbuf[li++] = c;
+            }
+        }
+    }
+    /* Handle last line with no trailing newline. */
+    if (li > 0) {
+        lbuf[li] = '\0';
+        char *s = lbuf;
+        while (*s == ' ' || *s == '\t') s++;
+        if (*s && *s != '#') {
+            char tmp[LINE_MAX + 2];
+            int j = 0;
+            while (s[j] && j <= LINE_MAX) { tmp[j] = s[j]; j++; }
+            tmp[j] = '\0';
+            dispatch(tmp);
+        }
+    }
+}
+
 /* ── Command dispatch ────────────────────────────────────────────────────── */
 
-static void shell_exec(void)
+static void dispatch(char *p)
 {
-    line[len] = '\0';
-
-    /* Skip leading whitespace. */
-    char *p = line;
     while (*p == ' ') p++;
     if (!*p) return;
 
-    /* ── Pipe detection: split "left | right" before tokenising ─────────── */
+    /* ── Pipe detection ──────────────────────────────────────────────────── */
     char *pipe_sep = NULL;
     for (char *q = p; *q; q++) {
         if (*q == '|') { pipe_sep = q; break; }
     }
     if (pipe_sep) {
-        /* Trim trailing whitespace from left side. */
         char *lt = pipe_sep - 1;
         while (lt >= p && *lt == ' ') *lt-- = '\0';
         *pipe_sep = '\0';
@@ -1318,6 +1379,7 @@ static void shell_exec(void)
     else if (sh_streq(cmd, "find"))     cmd_find(arg);
     else if (sh_streq(cmd, "which"))    cmd_which(arg);
     else if (sh_streq(cmd, "nano"))     cmd_nano(arg);
+    else if (sh_streq(cmd, "sh"))       cmd_script(arg);
     else if (sh_streq(cmd, "shutdown")) cmd_shutdown();
     else if (sh_streq(cmd, "reboot"))   cmd_reboot();
     else if (sh_streq(cmd, "cp")) {
@@ -1337,6 +1399,12 @@ static void shell_exec(void)
         vga_puts(cmd);
         vga_puts("'  (type 'help')\n");
     }
+}
+
+static void shell_exec(void)
+{
+    line[len] = '\0';
+    dispatch(line);
 }
 
 /* ── Main shell loop ─────────────────────────────────────────────────────── */
