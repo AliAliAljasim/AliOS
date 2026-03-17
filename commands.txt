@@ -59,20 +59,3 @@ prog > file	            ||  redirect stdout to file (overwrite)
 prog >> file	        ||  redirect stdout to file (append)
 prog < file	            ||  redirect stdin from file
 prog | tee file	        ||  write to stdout and file simultaneously
-
-
-=======================================
-TODO
-=======================================
-
---- User programs (/bin/) ---
-[x] sort                sort lines alphabetically
-[x] uniq                filter duplicate adjacent lines (pairs with sort)
-[x] tr <from> <to>      translate or delete characters
-[x] cut -f N [-d delim] extract fields from delimited lines
-[x] seq <n>             generate a sequence of numbers (1..n)
-[x] hexdump <file>      hex + ASCII dump of a file
-
---- Shell scripting ---
-[x] script execution    run a text file as a series of shell commands
-[x] # comments          ignore lines starting with #
